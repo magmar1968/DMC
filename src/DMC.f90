@@ -108,12 +108,12 @@ module DMC
                 Nwalkers = new_Nwalkers
                 !adjust the energy to keep the pop +- constant
                 E_shift = E_acc/real(Nwalkers,8) &
-                - 0.1/dt * log( real(Nwalkers,8)/N0walkers)
+                          - 0.1/dt * log( real(Nwalkers,8)/N0walkers)
                 
             end do !end thermalization loop
 
             call stop_clock(Time)
-            print *, "MC_step: ", MC_step, "in: " ,Time%minutes,Time%seconds
+            print *, "MC_step: ", MC_step,"pop:",Nwalkers, "in:" ,Time%minutes,Time%seconds
             if(MC_step > 0) then !skip all the stability steps
                 E = E_acc/real(Nwalkers,8)
                 E_avg  = E_avg  * real(MC_step-1,kind=8)/real(MC_step,8) &

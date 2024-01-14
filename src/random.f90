@@ -149,4 +149,35 @@ module random
         gauss = l
     end function gauss
     !##############################################
+
+    !##############################################
+    !#               Gauss Array                  #
+    !##############################################
+    function gauss_array(sigma,mu,size)
+        integer, intent(in) :: size
+        real*8, intent(in),optional :: sigma,mu
+        real*8                  :: m_sigma,m_mu
+        real*8,dimension(size) :: gauss_array
+        integer :: index
+        
+        if ( present(sigma) .and. .not. present(mu)) then !most likely case
+            m_mu    = 0 
+            m_sigma = sigma
+        else if (present(sigma) .and. present(mu)) then 
+            m_mu    = mu
+            m_sigma = sigma
+        else if (.not. present(sigma) .and. present(mu) ) then 
+            m_mu    = mu
+            m_sigma = 1.
+        else 
+            m_mu    = 0.
+            m_sigma = 1.
+        end if 
+
+        do index = 1, size
+            gauss_array(index) = gauss(m_sigma,m_mu)
+        end do 
+        return 
+    end function
+
 end module

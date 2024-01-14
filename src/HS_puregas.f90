@@ -429,7 +429,6 @@ module HS_puregas
         real*8,  intent(in),  dimension(:,:) :: R_IN 
         real*8,  dimension(:,:),optional     :: DRIFT_IN
         real*8,  intent(out), dimension(:,:) :: R_OUT
-        ! real*8, dimension(size(R_in,dim=1),size(R_in,dim=2)) :: R_TEMP
         real*8, dimension(size(R_in,dim=1),size(R_in,dim=2)) :: DRIFT
         real*8,  intent(in) ::  dt
         real*8 :: sigma 
