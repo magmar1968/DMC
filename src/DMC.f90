@@ -41,7 +41,6 @@ module DMC
         real*8,dimension(Natoms,DIM)  :: R_TMP   !to store trial position 
         integer :: COUNTER
         integer :: i_walker, new_Nwalkers, N_sons,son 
-        logical :: hcore_crossed
 
         allocate(walker(Natoms,DIM,N0walkers + N0walkers/3,2)) !some extra space for population fluctuations
         allocate( DRIFT(Natoms,DIM,N0walkers + N0walkers/3,2)) !some extra space for population fluctuations
@@ -79,11 +78,12 @@ module DMC
 
                     !generate trial move
                     call gen_new_particle_position(walker(:,:,i_walker,OLD), &
-                                                   R_TMP,dt=dt, &
-                                                   hcore_crossed = hcore_crossed)
+                                                   R_TMP,dt=dt)
+                    
                     ! DRIFT(:,:,i_walker,OLD) = F(R_TMP)
                     
-                    if( hcore_crossed .eqv. .FALSE.) then   
+                    !check if the new position has some hard core crossing
+                    if( .not. check_hcore_crosses(R_TMP)) then 
                         EL_new = Elocal(R_TMP)!DRIFT(:,:,i_walker,OLD) 
                         !new generation
                         call random_number(c1)
@@ -91,6 +91,7 @@ module DMC
                     else 
                         N_sons = 0
                     end if 
+
                     !transmit to next generation 
                     do son = 1,N_sons
                         !update walkers number

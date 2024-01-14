@@ -293,8 +293,7 @@ module HS_puregas
                            bessel_y0(params%k0*r)
             return
         else
-            twobody_corr = 0
-            write(*,*) "ERROR: in __twobody_corr__  r: ", r
+            twobody_corr = -1000
             return  
         end if 
     end function twobody_corr
@@ -305,7 +304,6 @@ module HS_puregas
         real*8, intent(in) :: r
         real*8 N,x    
         if (r < 0.) then
-            write(*,*) "ERROR: in __harmonic_GS__ the value r=", r, "is not accepted"
             harmonic_GS = -1000
             return 
         end if 
@@ -333,8 +331,7 @@ module HS_puregas
                                           C * bessel_y1(params%k0*r))
             return
         else 
-            twobody_corrprime = 0
-            write(*,*) "ERROR: in __twobody_corrprime__  r: ", r
+            twobody_corrprime = -1000
             return
         end if
     end function
@@ -355,8 +352,7 @@ module HS_puregas
                 )
             return 
         else 
-            twobody_corrdoubleprime = 0
-            write(*,*) "ERROR: in __twobody_corr__  r < m_Rcore"
+            twobody_corrdoubleprime = -1000
             return 
         end if 
     end function 
@@ -365,7 +361,6 @@ module HS_puregas
         real*8, intent(in) :: r
         real*8  :: x,J
         if (r < 0.) then
-            write(*,*) "ERROR: in __harmonic_GSprime__ the value r=", r, "is not accepted"
             harmonic_GSprime = -1000
             return 
         end if
@@ -379,7 +374,6 @@ module HS_puregas
         real*8, intent(in) :: r
         real*8  :: x,J      
         if (r < 0.) then
-            write(*,*) "ERROR: in __harmonic_GSdoubleprime__ the value r=", r, "is not accepted"
             harmonic_GSdoubleprime = -1000
             return 
         end if
@@ -430,11 +424,10 @@ module HS_puregas
     ! state is registred in R_OUT while R_in remain 
     ! unchanged. 
 
-    subroutine gen_new_particle_position(R_IN,R_OUT,DRIFT_IN,dt,hcore_crossed)
+    subroutine gen_new_particle_position(R_IN,R_OUT,DRIFT_IN,dt)
         implicit none
         real*8,  intent(in),  dimension(:,:) :: R_IN 
-        real*8,  dimension(:,:),optional ::DRIFT_IN
-        logical, intent(out) :: hcore_crossed
+        real*8,  dimension(:,:),optional     :: DRIFT_IN
         real*8,  intent(out), dimension(:,:) :: R_OUT
         ! real*8, dimension(size(R_in,dim=1),size(R_in,dim=2)) :: R_TEMP
         real*8, dimension(size(R_in,dim=1),size(R_in,dim=2)) :: DRIFT
@@ -449,14 +442,8 @@ module HS_puregas
 
         R_OUT = R_IN + D*dt*DRIFT/ 2.
         call diffuse(R_OUT,R_OUT,sigma)
-        hcore_crossed = check_hcore_crosses(R_OUT)
-        if(hcore_crossed) then 
-            return 
-        else 
-            R_OUT = R_OUT + D*dt* ( F(R_OUT) + DRIFT )/4.
-            call diffuse( R_OUT, R_OUT,sigma )
-            hcore_crossed = check_hcore_crosses(R_OUT)
-        end if  
+        R_OUT = R_OUT + D*dt* ( F(R_OUT) + DRIFT )/4.
+        call diffuse( R_OUT, R_OUT,sigma )
     end subroutine
 
 
@@ -570,11 +557,11 @@ module HS_puregas
         ekin = ekin - (-2/(params%a_osc**2))*Natoms
         
         !drift term
-        ! if(.not. present(DRIFT_IN)) then
-        !     DRIFT = F(R)
-        ! else
-        !     DRIFT = DRIFT_IN
-        ! end if 
+        if(.not. present(DRIFT_IN)) then
+            DRIFT = F(R)
+        else
+            DRIFT = DRIFT_IN
+        end if 
         DRIFT = F(R)
         do i_atom=1,Natoms
             ekin = ekin - 0.25d0*dot_product(DRIFT(i_atom,:),&
