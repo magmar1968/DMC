@@ -1,0 +1,27 @@
+!parameters
+NMCsteps                 10    !number of MCsptes
+NTsteps                  1000  !
+NStabSteps               100   !
+Natoms                   100   !
+N0walkers                100   !
+NdensProfileSteps        75    !
+TWFNPartitions           50000 ! 
+use_table                F     !
+use_init_conf_from_file  T 
+a_osc                    50    !
+Rv                       26.1
+alpha                    37.0 
+k0                       0.01711838434356691
+dt                       0.1 !delta time
+
+
+
+!printing flag
+INITIAL_CONFIGURATION    F
+FINAL_CONFIGURATION      F
+DENSITY_PROFILE          T
+ENERGY_EVOLUTION         T
+INITIAL_PARAMETERS       T
+TRIAL_WF                 F
+TRACK_ATOMS              F
+
