@@ -430,43 +430,51 @@ module HS_puregas
     ! state is registred in R_OUT while R_in remain 
     ! unchanged. 
 
-    subroutine gen_new_particle_position(R_IN,R_OUT,DRIFT_IN,dt,hcore_crossed)
+    subroutine gen_new_particle_position(R_IN,R_OUT,dt,hcore_crossed)
         use random,Only:gauss_array
         implicit none
         real*8,  intent(in),  dimension(:,:) :: R_IN 
-        real*8,  dimension(:,:),optional     :: DRIFT_IN
         real*8,  intent(out), dimension(:,:) :: R_OUT
-        real*8, dimension(size(R_in,dim=1),size(R_in,dim=2)) :: DRIFT
+        real*8, dimension(size(R_in,dim=1),size(R_in,dim=2)) :: DRIFT, R_TMP
         
         real*8,  intent(in) ::  dt
-        integer :: Natoms 
         real*8  :: sigma 
         logical,intent(out) :: hcore_crossed
         
         sigma  = sqrt(2*D*dt)
-        Natoms = size(R_in,dim=1) 
-        if( .not. present(DRIFT_IN)) then
-            DRIFT = F(R_IN)
-        else 
-            DRIFT = DRIFT_IN
-        end if 
-
-        R_OUT = R_IN + D*dt*DRIFT/ 2. 
-        call diffuse(R_OUT,R_OUT,sigma)
-        if(check_hcore_crosses(R_OUT)) then 
+        R_TMP = R_IN
+        !jordi method (more or less)
+        call diffuse(R_TMP,R_TMP,sigma)
+        if(check_hcore_crosses(R_TMP)) then 
             hcore_crossed = .TRUE.
             return 
         else 
-            R_OUT = R_OUT + D*dt* ( F(R_OUT) + DRIFT )/4.
-            call diffuse(R_OUT,R_OUT,sigma)
-            if(check_hcore_crosses(R_OUT)) then 
-                hcore_crossed = .TRUE.
-                return 
-            else 
-                hcore_crossed = .FALSE.
-                return 
-            end if
+            hcore_crossed = .FALSE.
+            DRIFT = F(R_TMP)
+            !first green function approx
+            R_OUT = R_TMP + D*dt*DRIFT/4.
+            !second green function approx
+            R_OUT = R_OUT + D*dt*( F(R_OUT) + DRIFT )/8.
+            hcore_crossed = check_hcore_crosses(R_OUT)
         end if 
+
+        ! !method 2
+        ! R_OUT = R_IN + D*dt*DRIFT/ 2. 
+        ! call diffuse(R_OUT,R_OUT,sigma)
+        ! if(check_hcore_crosses(R_OUT)) then 
+        !     hcore_crossed = .TRUE.
+        !     return 
+        ! else 
+        !     R_OUT = R_OUT + D*dt* ( F(R_OUT) + DRIFT )/4.
+        !     ! call diffuse(R_OUT,R_OUT,sigma)
+        !     if(check_hcore_crosses(R_OUT)) then 
+        !         hcore_crossed = .TRUE.
+        !         return 
+        !     else 
+        !         hcore_crossed = .FALSE.
+        !         return 
+        !     end if
+        ! end if 
     end subroutine
 
 
@@ -516,18 +524,25 @@ module HS_puregas
     !#################################################### 
     ! Compute the local energy starting from configuration
     ! R and energy scale D=hsquare/2m
-    real*8 function Elocal(R,DRIFT)
+    real*8 function Elocal(R)
         implicit none
         real*8, intent(in), dimension(:,:) :: R
-        real*8, intent(in), dimension(:,:),optional :: DRIFT
-        if(.not. present(DRIFT)) then
-            Elocal = Ekin(R) + Epot(R)
-        else 
-            Elocal = Ekin(R,DRIFT)
-        end if 
-         
+        Elocal = Ekin(R) + Epot(R) 
         return 
     end function
+
+    ! real*8 function Elocal(R,DRIFT)
+    !     implicit none
+    !     real*8, intent(in), dimension(:,:) :: R
+    !     real*8, intent(in), dimension(:,:),optional :: DRIFT
+    !     if(.not. present(DRIFT)) then
+    !         Elocal = Ekin(R) + Epot(R)
+    !     else 
+    !         Elocal = Ekin(R,DRIFT) + Epot(R)
+    !     end if 
+         
+    !     return 
+    ! end function
 
     !####################################################
     !#           Compute Potential Energy               #
@@ -550,9 +565,9 @@ module HS_puregas
     !####################################################
     !#             Compute Kinetic Energy               #
     !####################################################          
-    real*8 function Ekin(R,DRIFT_IN)
+    real*8 function Ekin(R)
         real*8,intent(in),dimension(:,:) :: R
-        real*8, dimension(size(R,dim=1),size(R,2)),optional :: DRIFT_IN
+        ! real*8, dimension(size(R,dim=1),size(R,2)),optional :: DRIFT_IN
         real*8, dimension(size(R,dim=1),size(R,2)) :: DRIFT
         real*8  :: radius,r1m,up,us,appo!,remainder,num,den
         integer :: i_atom,j_atom!, i_step
@@ -579,12 +594,7 @@ module HS_puregas
         !potential interaction term 
         ekin = ekin - (-2/(params%a_osc**2))*Natoms
         
-        !drift term
-        if(.not. present(DRIFT_IN)) then
-            DRIFT = F(R)
-        else
-            DRIFT = DRIFT_IN
-        end if 
+        !drift term 
         DRIFT = F(R)
         do i_atom=1,Natoms
             ekin = ekin - 0.25d0*dot_product(DRIFT(i_atom,:),&
@@ -594,19 +604,14 @@ module HS_puregas
         return
     end function
 
-    real*8 function Ekinfor(R,DRIFT_IN)
+    real*8 function Ekinfor(R)
         real*8,intent(in),dimension(:,:) :: R
-        real*8, dimension(size(R,dim=1),size(R,dim=2)),optional :: DRIFT_IN
         real*8, dimension(size(R,dim=1),size(R,dim=2)) :: DRIFT
         integer :: i_atom, Natoms
         ekinfor = 0
         Natoms = size(R,dim=1)
 
-        if(.not. present(DRIFT_IN)) then 
-            DRIFT = F(R)
-        else 
-            DRIFT = DRIFT_IN
-        end if 
+        DRIFT = F(R) 
         do i_atom=1,Natoms
             ekinfor = ekinfor + 0.25*dot_product(DRIFT(i_atom,:),&
                                                  DRIFT(i_atom,:))
@@ -618,21 +623,14 @@ module HS_puregas
     !####################################################
     !#                  Get Energies                    #
     !####################################################
-    subroutine get_energies(R,OUT_Energies,DRIFT)
+    subroutine get_energies(R,OUT_Energies)
         implicit none
         
         real*8,intent(in),dimension(:,:) :: R
         type(Energies),intent(out) :: OUT_Energies
-        real*8,optional,dimension(:,:) :: DRIFT !to speed up energy computing
 
-        !not having to compute the drift speed up the process
-        if( present(DRIFT)) then 
-            OUT_Energies%Ekin    = Ekin(R,DRIFT)
-            OUT_Energies%Ekinfor = Ekinfor(R,DRIFT)
-        else 
-            OUT_Energies%Ekin    = Ekin(R)
-            OUT_Energies%Ekinfor = Ekinfor(R)
-        end if 
+        OUT_Energies%Ekin    = Ekin(R)
+        OUT_Energies%Ekinfor = Ekinfor(R)
         OUT_Energies%Epot = Epot(R)
         OUT_Energies%EL   = OUT_Energies%Epot +  OUT_Energies%Ekin
         
