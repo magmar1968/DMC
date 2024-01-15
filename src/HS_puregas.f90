@@ -293,7 +293,8 @@ module HS_puregas
                            bessel_y0(params%k0*r)
             return
         else
-            twobody_corr = -1000
+            twobody_corr = 0
+            write(*,*) "ERROR: in __twobody_corr__  r=",r, " < m_Rcore"
             return  
         end if 
     end function twobody_corr
@@ -304,6 +305,7 @@ module HS_puregas
         real*8, intent(in) :: r
         real*8 N,x    
         if (r < 0.) then
+            write(*,*) "ERROR: in __harmonic_GS__ the value r=", r, "is not accepted"
             harmonic_GS = -1000
             return 
         end if 
@@ -332,6 +334,7 @@ module HS_puregas
             return
         else 
             twobody_corrprime = -1000
+            write(*,*) "ERROR: in __twobody_corrprime__  r=",r, " < m_Rcore"
             return
         end if
     end function
@@ -352,7 +355,8 @@ module HS_puregas
                 )
             return 
         else 
-            twobody_corrdoubleprime = -1000
+            twobody_corrdoubleprime = 0
+            write(*,*) "ERROR: in __twobody_corr__  r=",r, " < m_Rcore"
             return 
         end if 
     end function 
@@ -361,6 +365,7 @@ module HS_puregas
         real*8, intent(in) :: r
         real*8  :: x,J
         if (r < 0.) then
+            write(*,*) "ERROR: in __harmonic_GSprime__ the value r=", r, "is not accepted"
             harmonic_GSprime = -1000
             return 
         end if
@@ -374,6 +379,7 @@ module HS_puregas
         real*8, intent(in) :: r
         real*8  :: x,J      
         if (r < 0.) then
+            write(*,*) "ERROR: in __harmonic_GSdoubleprime__ the value r=", r, "is not accepted"
             harmonic_GSdoubleprime = -1000
             return 
         end if
@@ -424,25 +430,43 @@ module HS_puregas
     ! state is registred in R_OUT while R_in remain 
     ! unchanged. 
 
-    subroutine gen_new_particle_position(R_IN,R_OUT,DRIFT_IN,dt)
+    subroutine gen_new_particle_position(R_IN,R_OUT,DRIFT_IN,dt,hcore_crossed)
+        use random,Only:gauss_array
         implicit none
         real*8,  intent(in),  dimension(:,:) :: R_IN 
         real*8,  dimension(:,:),optional     :: DRIFT_IN
         real*8,  intent(out), dimension(:,:) :: R_OUT
         real*8, dimension(size(R_in,dim=1),size(R_in,dim=2)) :: DRIFT
+        
         real*8,  intent(in) ::  dt
-        real*8 :: sigma 
-        sigma = sqrt(2*D*dt)
+        integer :: Natoms 
+        real*8  :: sigma 
+        logical,intent(out) :: hcore_crossed
+        
+        sigma  = sqrt(2*D*dt)
+        Natoms = size(R_in,dim=1) 
         if( .not. present(DRIFT_IN)) then
             DRIFT = F(R_IN)
         else 
             DRIFT = DRIFT_IN
         end if 
 
-        R_OUT = R_IN + D*dt*DRIFT/ 2.
+        R_OUT = R_IN + D*dt*DRIFT/ 2. 
         call diffuse(R_OUT,R_OUT,sigma)
-        R_OUT = R_OUT + D*dt* ( F(R_OUT) + DRIFT )/4.
-        call diffuse( R_OUT, R_OUT,sigma )
+        if(check_hcore_crosses(R_OUT)) then 
+            hcore_crossed = .TRUE.
+            return 
+        else 
+            R_OUT = R_OUT + D*dt* ( F(R_OUT) + DRIFT )/4.
+            call diffuse(R_OUT,R_OUT,sigma)
+            if(check_hcore_crosses(R_OUT)) then 
+                hcore_crossed = .TRUE.
+                return 
+            else 
+                hcore_crossed = .FALSE.
+                return 
+            end if
+        end if 
     end subroutine
 
 
@@ -570,14 +594,19 @@ module HS_puregas
         return
     end function
 
-    real*8 function Ekinfor(R,DRIFT)
+    real*8 function Ekinfor(R,DRIFT_IN)
         real*8,intent(in),dimension(:,:) :: R
-        real*8, dimension(size(R,dim=1),size(R,dim=2)),optional :: DRIFT
+        real*8, dimension(size(R,dim=1),size(R,dim=2)),optional :: DRIFT_IN
+        real*8, dimension(size(R,dim=1),size(R,dim=2)) :: DRIFT
         integer :: i_atom, Natoms
         ekinfor = 0
         Natoms = size(R,dim=1)
 
-        if(.not. present(DRIFT)) DRIFT = F(R)
+        if(.not. present(DRIFT_IN)) then 
+            DRIFT = F(R)
+        else 
+            DRIFT = DRIFT_IN
+        end if 
         do i_atom=1,Natoms
             ekinfor = ekinfor + 0.25*dot_product(DRIFT(i_atom,:),&
                                                  DRIFT(i_atom,:))
