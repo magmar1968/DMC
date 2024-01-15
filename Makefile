@@ -53,7 +53,7 @@ parallel: all
 
 .PHONY: fast
 fast: clean
-fast: FFLAGS += -O3
+fast: FFLAGS += -O2
 fast: all
 
 .PHONY: profiling
