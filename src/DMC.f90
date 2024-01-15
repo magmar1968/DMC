@@ -10,7 +10,7 @@ module DMC
     real*8                              :: E_acc,E2_acc, Ekin_acc, Ekinfor_acc, Epot_acc
     real*8                              :: E_avg,E2_avg
     real*8,allocatable,dimension(:,:,:,:) :: walker
-    real*8,allocatable,dimension(:,:,:,:) :: DRIFT   !to store DRIFT
+    real*8,allocatable,dimension(:,:)   :: F1,F2   !to store DRIFT
     real*8,allocatable,dimension(:,:)   :: R
     real*8,allocatable,dimension(:,:)   :: EL
     real*8,allocatable,dimension(:)     :: density_profile
@@ -40,15 +40,20 @@ module DMC
         real*8  :: EL_new,E
         real*8  :: E_shift !to control the population growth
         real*8,dimension(Natoms,DIM)  :: R_TMP   !to store trial position 
+        real*8, pointer :: R_IN(:,:) => null()
         integer :: COUNT_REJECTED,COUNT_ACCEPTED
         integer :: i_walker, new_Nwalkers,Maxwalkers, N_sons,son 
-        logical :: hcore_crossed
+        character(len=40) :: E_FMT
+
+        E_FMT = "(A,I3.1,A,F5.3,A,I3.2,A,I2.1,A,I2.1)"
         sigma = sqrt(2*D*dt)
         Maxwalkers = N0walkers + N0walkers/2
         allocate(walker(Natoms,DIM,Maxwalkers,2)) !some extra space for population fluctuations
-        allocate( DRIFT(Natoms,DIM,Maxwalkers,2)) !some extra space for population fluctuations
         allocate(               EL(Maxwalkers,2))
         allocate(density_profile(NdensProfileSteps))
+        allocate(F1(Natoms,DIM))
+        allocate(F2(Natoms,DIM))
+
         
         !init all simulation parameters
         call init_patameters()
@@ -81,42 +86,37 @@ module DMC
                 E_acc        = 0
                 
                 do i_walker = 1,Nwalkers
-
-                    !generate trial move
-                    call gen_new_particle_position(R_IN  = walker(:,:,i_walker,OLD), &
-                                                   R_OUT = R_TMP,                    &
-                                                   hcore_crossed = hcore_crossed,    &
-                                                   dt    = dt)
-                    ! call diffuse(walker(:,:,i_walker,OLD),R_TMP,sigma=sigma)
-                    
-                    ! DRIFT(:,:,i_walker,OLD) = F(R_TMP)
-                    !check if the new position has some hard core crossing
-                    if( .not. hcore_crossed) then 
+                    !first diffuse
+                    call diffuse(R_IN  = walker(:,:,i_walker,OLD),&
+                                 R_OUT = R_TMP, sigma = sigma)
+                   
+                    if( .not. check_hcore_crosses(R_TMP)) then 
                         COUNT_ACCEPTED = COUNT_ACCEPTED + 1
-                        EL_new = Elocal(R_TMP)!DRIFT(:,:,i_walker,OLD) 
+                        !first step R'
+                        F1 = F(walker(:,:,i_walker,OLD)) !F(R)
+                        R_TMP = R_TMP + D*dt*F1/8. 
+                        !second step R''
+                        R_TMP = walker(:,:,i_walker,OLD) + D*dt*(F1+F(R_TMP))/16. 
+                        !compute energy E(R'')
+                        EL_new = Elocal(R_TMP) 
                         !new generation
                         call random_number(c1)
                         N_sons = floor( dexp(-dt* ((EL_new + EL(i_walker,OLD))/2. - E_shift)) + c1)
-                        if (N_sons > 5) then 
-                            print *,"lot's of sons:",N_sons
-                        end if 
-                    else 
-                        COUNT_REJECTED = COUNT_REJECTED + 1    
+                        !third move 
+                        R_TMP = walker(:,:,i_walker,OLD) + D*dt*F(R_TMP)/4.
+                    else
+                        COUNT_REJECTED = COUNT_REJECTED + 1 
                         N_sons = 0
                     end if 
-
+                    
                     !transmit to next generation 
                     do son = 1,N_sons
                         !update walkers number
                         new_Nwalkers = new_Nwalkers + 1
-                        if (new_Nwalkers > Maxwalkers) then 
-                            print *, "Huston we got a problem here"
-                        end if  
                         !append new walker to the end 
                         E_acc = E_acc + EL_new
-                        walker(:,:,new_Nwalkers,NEW) =  R_TMP
-                        ! DRIFT(:,:,new_Nwalkers,NEW)  = DRIFT(:,:,i_walker,OLD)
-                        EL(new_Nwalkers,NEW) = EL_new
+                        walker(:,:,new_Nwalkers,NEW) = R_TMP
+                        EL(new_Nwalkers,NEW)         = EL_new
                     end do 
                 end do 
                 
@@ -128,18 +128,21 @@ module DMC
                 E_shift = E_acc/real(Nwalkers,8) &
                           - 0.1/dt * log( real(Nwalkers,8)/N0walkers)
             end do !end thermalization loop
-
+            E = E_acc/real(Nwalkers,8)
             call stop_clock(Time)
-            print *, "MC_step: ", MC_step,"pop:",Nwalkers, "in:" ,Time%minutes,Time%seconds
+            print E_FMT, "MC_step: ",MC_step, &
+                         "     EL: ",E,       &
+                         "    pop: ",Nwalkers,& 
+                         "     in: ",Time%minutes,":",Time%seconds
+
             if(MC_step > 0) then !skip all the stability steps
-                E = E_acc/real(Nwalkers,8)
                 E_avg  = E_avg  * real(MC_step-1,kind=8)/real(MC_step,8) &
-                                        + (E)   /real(MC_step,8)
+                         + (E)   /real(MC_step,8)
                 E2_avg = E2_avg * real(MC_step-1,kind=8)/real(MC_step,8) &
-                                        + (E**2)/real(MC_step,8)
+                         + (E**2)/real(MC_step,8)
                 if(PRINT_ENERGY_EVOLUTION) &
                     call update_energy_accumulators()
-
+                
                 if(PRINT_DENSITY_PROFILE) &
                     call update_density_profile()
             end if 
@@ -154,9 +157,9 @@ module DMC
             call print_density_profile_toFile(density_profile)
 
         deallocate(walker)
-        deallocate(DRIFT)
         deallocate(density_profile)
         deallocate(EL)
+        deallocate(F1);deallocate(F2)
     end subroutine
 
     subroutine init_patameters()
@@ -196,7 +199,7 @@ module DMC
         
         
         do i_walker = 1, Nwalkers
-            call get_energies(walker(:,:,i_walker,NEW),res_E,DRIFT(:,:,i_walker,NEW))
+            call get_energies(walker(:,:,i_walker,NEW),res_E)
             acc_E%Ekin    = acc_E%Ekin    + res_E%Ekin
             acc_E%Ekinfor = acc_E%Ekinfor + res_E%Ekinfor
             acc_E%Epot    = acc_E%Epot    + res_E%Epot
