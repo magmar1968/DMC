@@ -9,8 +9,9 @@ program main
     call run_DMC(results)
     print *, "######################################################"
     print *, "RESULTS:"
-    print *, "  energy:  ", results%E
-    print *, "  error:   ", results%error
+    print *, "  energy:    ", results%E
+    print *, "  error:     ", results%error
+    print *, "  cross rate:", results%cross_rate
     print *, "######################################################"
 
 

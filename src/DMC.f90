@@ -20,6 +20,7 @@ module DMC
     type :: DMC_results
         real*8 :: E
         real*8 :: error
+        real*8 :: cross_rate
     end type
 
     contains
@@ -35,39 +36,44 @@ module DMC
         
         type(DMC_results),intent(out) :: results
         type(time_res) :: Time
-        real*8  :: c1
+        real*8  :: c1,sigma
         real*8  :: EL_new,E
         real*8  :: E_shift !to control the population growth
         real*8,dimension(Natoms,DIM)  :: R_TMP   !to store trial position 
-        integer :: COUNTER
-        integer :: i_walker, new_Nwalkers, N_sons,son 
-
-        allocate(walker(Natoms,DIM,N0walkers + N0walkers/3,2)) !some extra space for population fluctuations
-        allocate( DRIFT(Natoms,DIM,N0walkers + N0walkers/3,2)) !some extra space for population fluctuations
-        allocate(               EL(N0walkers + N0walkers/3,2))
+        integer :: COUNT_REJECTED,COUNT_ACCEPTED
+        integer :: i_walker, new_Nwalkers,Maxwalkers, N_sons,son 
+        logical :: hcore_crossed
+        sigma = sqrt(2*D*dt)
+        Maxwalkers = N0walkers + N0walkers/2
+        allocate(walker(Natoms,DIM,Maxwalkers,2)) !some extra space for population fluctuations
+        allocate( DRIFT(Natoms,DIM,Maxwalkers,2)) !some extra space for population fluctuations
+        allocate(               EL(Maxwalkers,2))
         allocate(density_profile(NdensProfileSteps))
         
         !init all simulation parameters
         call init_patameters()
-        COUNTER = 0
+        COUNT_REJECTED = 0
         call init_random_seed()
         if(USE_TABLE) then 
             call gen_TWF_tables(Npartitions=TWFNPartitions) 
         end if 
 
         !gen walker position and starting energies
-        E_shift = 0
+        E_shift = 0; COUNT_ACCEPTED = 0
         do i_walker=1,Nwalkers
             if( .not. INIT_CONF_FROM_FILE) then 
                 call gen_initial_configuration(walker(:,:,i_walker,OLD))
             else
                 call read_initial_configuration_fromfile(walker(:,:,i_walker,OLD))
             end if  
+        end do
+
+        !compute initial local energy and E_shift
+        do i_walker=1, Nwalkers
             EL(i_walker,OLD) = Elocal(walker(:,:,i_walker,OLD))
             E_shift = E_shift + EL(i_walker,OLD)
-        end do
+        end do 
         E_shift = E_shift/real(Nwalkers,8)
- 
         do MC_step= -NStabSteps, NMCsteps
             call start_clock()
             do step = 1, NThermSteps
@@ -77,18 +83,25 @@ module DMC
                 do i_walker = 1,Nwalkers
 
                     !generate trial move
-                    call gen_new_particle_position(walker(:,:,i_walker,OLD), &
-                                                   R_TMP,dt=dt)
+                    call gen_new_particle_position(R_IN  = walker(:,:,i_walker,OLD), &
+                                                   R_OUT = R_TMP,                    &
+                                                   hcore_crossed = hcore_crossed,    &
+                                                   dt    = dt)
+                    ! call diffuse(walker(:,:,i_walker,OLD),R_TMP,sigma=sigma)
                     
                     ! DRIFT(:,:,i_walker,OLD) = F(R_TMP)
-                    
                     !check if the new position has some hard core crossing
-                    if( .not. check_hcore_crosses(R_TMP)) then 
+                    if( .not. hcore_crossed) then 
+                        COUNT_ACCEPTED = COUNT_ACCEPTED + 1
                         EL_new = Elocal(R_TMP)!DRIFT(:,:,i_walker,OLD) 
                         !new generation
                         call random_number(c1)
                         N_sons = floor( dexp(-dt* ((EL_new + EL(i_walker,OLD))/2. - E_shift)) + c1)
+                        if (N_sons > 5) then 
+                            print *,"lot's of sons:",N_sons
+                        end if 
                     else 
+                        COUNT_REJECTED = COUNT_REJECTED + 1    
                         N_sons = 0
                     end if 
 
@@ -96,6 +109,9 @@ module DMC
                     do son = 1,N_sons
                         !update walkers number
                         new_Nwalkers = new_Nwalkers + 1
+                        if (new_Nwalkers > Maxwalkers) then 
+                            print *, "Huston we got a problem here"
+                        end if  
                         !append new walker to the end 
                         E_acc = E_acc + EL_new
                         walker(:,:,new_Nwalkers,NEW) =  R_TMP
@@ -103,13 +119,14 @@ module DMC
                         EL(new_Nwalkers,NEW) = EL_new
                     end do 
                 end do 
+                
                 NEW = 3 - NEW
                 OLD = 3 - OLD
                 Nwalkers = new_Nwalkers
                 !adjust the energy to keep the pop +- constant
+                
                 E_shift = E_acc/real(Nwalkers,8) &
                           - 0.1/dt * log( real(Nwalkers,8)/N0walkers)
-                
             end do !end thermalization loop
 
             call stop_clock(Time)
@@ -130,6 +147,8 @@ module DMC
 
         results%E     = E_avg
         results%error = sqrt( (E2_avg - E_avg**2))
+        results%cross_rate = COUNT_REJECTED/COUNT_ACCEPTED
+
 
         if(PRINT_DENSITY_PROFILE) &
             call print_density_profile_toFile(density_profile)
@@ -177,10 +196,10 @@ module DMC
         
         
         do i_walker = 1, Nwalkers
-            call get_energies(walker(:,:,i_walker,OLD),res_E,DRIFT(:,:,i_walker,OLD))
-            acc_E%Ekin    = acc_E%Ekin   + res_E%Ekin
+            call get_energies(walker(:,:,i_walker,NEW),res_E,DRIFT(:,:,i_walker,NEW))
+            acc_E%Ekin    = acc_E%Ekin    + res_E%Ekin
             acc_E%Ekinfor = acc_E%Ekinfor + res_E%Ekinfor
-            acc_E%Epot    = acc_E%Epot    + res_E%Ekinfor
+            acc_E%Epot    = acc_E%Epot    + res_E%Epot
             acc_E%EL      = acc_E%EL      + res_E%EL 
         end do 
         acc_E%Ekin    = acc_E%Ekin   /Nwalkers
@@ -206,7 +225,6 @@ module DMC
         do i_walker = 1, Nwalkers
             do i_atom = 1, Natoms
                 radius = norm2(walker(i_atom,:,i_walker,OLD)) 
-
                 if (radius > MAX_RADIUS) then 
                     Nenlarging = floor( (radius - MAX_RADIUS)/densProfileStep)
                     Nenlarging = Nenlarging + 2 !adding some extra space 
@@ -216,11 +234,15 @@ module DMC
                     
                     NdensProfileSteps = size(density_profile)
                     MAX_RADIUS        = densProfileStep*new_size
+                    if (radius > 500) then 
+                        print *,"super far particle:",i_atom,radius,walker(i_atom,:,i_walker,OLD)
+                    end if 
                 end if 
                 i_step = floor(radius/densProfileStep) + 1
-                density_profile(i_step) = (density_profile(i_step) + 1)/real(Nwalkers,8)
+                density_profile(i_step) = density_profile(i_step) + 1/real(Nwalkers,8)
             end do
         end do 
+
         
     end subroutine
 
