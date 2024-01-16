@@ -458,23 +458,7 @@ module HS_puregas
             hcore_crossed = check_hcore_crosses(R_OUT)
         end if 
 
-        ! !method 2
-        ! R_OUT = R_IN + D*dt*DRIFT/ 2. 
-        ! call diffuse(R_OUT,R_OUT,sigma)
-        ! if(check_hcore_crosses(R_OUT)) then 
-        !     hcore_crossed = .TRUE.
-        !     return 
-        ! else 
-        !     R_OUT = R_OUT + D*dt* ( F(R_OUT) + DRIFT )/4.
-        !     ! call diffuse(R_OUT,R_OUT,sigma)
-        !     if(check_hcore_crosses(R_OUT)) then 
-        !         hcore_crossed = .TRUE.
-        !         return 
-        !     else 
-        !         hcore_crossed = .FALSE.
-        !         return 
-        !     end if
-        ! end if 
+ 
     end subroutine
 
 
@@ -530,19 +514,6 @@ module HS_puregas
         Elocal = Ekin(R) + Epot(R) 
         return 
     end function
-
-    ! real*8 function Elocal(R,DRIFT)
-    !     implicit none
-    !     real*8, intent(in), dimension(:,:) :: R
-    !     real*8, intent(in), dimension(:,:),optional :: DRIFT
-    !     if(.not. present(DRIFT)) then
-    !         Elocal = Ekin(R) + Epot(R)
-    !     else 
-    !         Elocal = Ekin(R,DRIFT) + Epot(R)
-    !     end if 
-         
-    !     return 
-    ! end function
 
     !####################################################
     !#           Compute Potential Energy               #
