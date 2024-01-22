@@ -13,7 +13,7 @@ module DMC
     real*8,allocatable,dimension(:,:)   :: F1,F2   !to store DRIFT
     real*8,allocatable,dimension(:,:)   :: R
     real*8,allocatable,dimension(:,:)   :: EL
-    real*8,allocatable,dimension(:)     :: density_profile
+    real*8,allocatable,dimension(:)     :: density_profile, tmp_density_profile
     real*8,dimension(2)                 :: TWF 
 
 
@@ -39,8 +39,7 @@ module DMC
         real*8  :: c1,sigma
         real*8  :: EL_new,E
         real*8  :: E_shift !to control the population growth
-        real*8,dimension(Natoms,DIM)  :: R_TMP   !to store trial position 
-        real*8, pointer :: R_IN(:,:) => null()
+        real*8,dimension(Natoms,DIM)  :: R_TMP,R_DIFFUSED   !to store trial position 
         integer :: COUNT_REJECTED,COUNT_ACCEPTED
         integer :: i_walker, new_Nwalkers,Maxwalkers, N_sons,son 
         character(len=40) :: E_FMT
@@ -51,6 +50,7 @@ module DMC
         allocate(walker(Natoms,DIM,Maxwalkers,2)) !some extra space for population fluctuations
         allocate(               EL(Maxwalkers,2))
         allocate(density_profile(NdensProfileSteps))
+        allocate(tmp_density_profile(NdensProfileSteps))
         allocate(F1(Natoms,DIM))
         allocate(F2(Natoms,DIM))
 
@@ -84,26 +84,35 @@ module DMC
             do step = 1, NThermSteps
                 new_Nwalkers = 0
                 E_acc        = 0
+                tmp_density_profile = 0
                 
                 do i_walker = 1,Nwalkers
                     !first diffuse
                     call diffuse(R_IN  = walker(:,:,i_walker,OLD),&
-                                 R_OUT = R_TMP, sigma = sigma)
+                                 R_OUT = R_DIFFUSED, sigma = sigma)
                    
-                    if( .not. check_hcore_crosses(R_TMP)) then 
+                    if( .not. check_hcore_crosses(R_DIFFUSED)) then 
                         COUNT_ACCEPTED = COUNT_ACCEPTED + 1
-                        !first step R'
+                        !first step R' = R + D*dt*F(R)/2 + gammma.
                         F1 = F(walker(:,:,i_walker,OLD)) !F(R)
-                        R_TMP = R_TMP + D*dt*F1/8. 
-                        !second step R''
-                        R_TMP = walker(:,:,i_walker,OLD) + D*dt*(F1+F(R_TMP))/16. 
-                        !compute energy E(R'')
-                        EL_new = Elocal(R_TMP) 
+                        R_TMP = R_DIFFUSED + D*dt*F1/2.       
+                       
+                        !second step R'' = R + D*dt*(F(R) + F(R'))/4.
+                        R_TMP = R_DIFFUSED + D*dt*(F1+F(R_TMP))/4.   
+                       
+                        !compute energy E(R'') 
+                        EL_new = Elocal(R_TMP)
+
                         !new generation
                         call random_number(c1)
                         N_sons = floor( dexp(-dt* ((EL_new + EL(i_walker,OLD))/2. - E_shift)) + c1)
-                        !third move 
-                        R_TMP = walker(:,:,i_walker,OLD) + D*dt*F(R_TMP)/4.
+                        
+
+                        if(PRINT_DENSITY_PROFILE .and. MC_step > 0 .and. N_sons > 0) &
+                            call update_density_profile(R_TMP,N_sons)
+
+                        !third move R(R''') = R + D*dt*F(R'')/4.
+                        R_TMP = R_DIFFUSED + D*dt*F(R_TMP)/2.
                     else
                         COUNT_REJECTED = COUNT_REJECTED + 1 
                         N_sons = 0
@@ -124,7 +133,6 @@ module DMC
                 OLD = 3 - OLD
                 Nwalkers = new_Nwalkers
                 !adjust the energy to keep the pop +- constant
-                
                 E_shift = E_acc/real(Nwalkers,8) &
                           - 0.1/dt * log( real(Nwalkers,8)/N0walkers)
             end do !end thermalization loop
@@ -142,9 +150,10 @@ module DMC
                          + (E**2)/real(MC_step,8)
                 if(PRINT_ENERGY_EVOLUTION) &
                     call update_energy_accumulators()
-                
+
                 if(PRINT_DENSITY_PROFILE) &
-                    call update_density_profile()
+                    density_profile = density_profile + tmp_density_profile/Nwalkers
+                
             end if 
         end do 
 
@@ -158,6 +167,7 @@ module DMC
 
         deallocate(walker)
         deallocate(density_profile)
+        deallocate(tmp_density_profile)
         deallocate(EL)
         deallocate(F1);deallocate(F2)
     end subroutine
@@ -213,38 +223,54 @@ module DMC
 
     end subroutine
 
-    subroutine update_density_profile()
+    subroutine update_density_profile(POS,son_number)
         use DMC_parameters
         use HS_puregas
         use array_utility,Only:increase_size
         implicit none
 
-        integer :: i_walker
-        real*8     :: radius 
-        integer    :: i_atom,i_step
-        integer    :: Nenlarging,new_size
+        real*8,dimension(Natoms,DIM) :: POS
+        integer :: son_number,i_atom,i_step
+        integer :: Nenlarging,new_size
+        real*8  :: radius
+
+
+
+          do i_atom = 1, Natoms
+            radius = norm2(POS(i_atom,:)) 
+            if (radius > MAX_RADIUS) then 
+                Nenlarging = floor( (radius - MAX_RADIUS)/densProfileStep)
+                Nenlarging = Nenlarging + 2 !adding some extra space 
+                new_size   = size(density_profile) + Nenlarging
+                
+                call increase_size(array=density_profile,     new_size=new_size)
+                call increase_size(array=tmp_density_profile, new_size=new_size)
+                
+                NdensProfileSteps = size(density_profile)
+                MAX_RADIUS        = densProfileStep*new_size
+            end if 
+            i_step = floor(radius/densProfileStep) + 1
+            density_profile(i_step) = density_profile(i_step) + son_number
+        end do
 
         
-        do i_walker = 1, Nwalkers
-            do i_atom = 1, Natoms
-                radius = norm2(walker(i_atom,:,i_walker,OLD)) 
-                if (radius > MAX_RADIUS) then 
-                    Nenlarging = floor( (radius - MAX_RADIUS)/densProfileStep)
-                    Nenlarging = Nenlarging + 2 !adding some extra space 
-                    new_size   = size(density_profile) + Nenlarging
+        ! do i_walker = 1, Nwalkers
+        !     do i_atom = 1, Natoms
+        !         radius = norm2(walker(i_atom,:,i_walker,OLD)) 
+        !         if (radius > MAX_RADIUS) then 
+        !             Nenlarging = floor( (radius - MAX_RADIUS)/densProfileStep)
+        !             Nenlarging = Nenlarging + 2 !adding some extra space 
+        !             new_size   = size(density_profile) + Nenlarging
                     
-                    call increase_size(array=density_profile, new_size=new_size)
+        !             call increase_size(array=density_profile, new_size=new_size)
                     
-                    NdensProfileSteps = size(density_profile)
-                    MAX_RADIUS        = densProfileStep*new_size
-                    if (radius > 500) then 
-                        print *,"super far particle:",i_atom,radius,walker(i_atom,:,i_walker,OLD)
-                    end if 
-                end if 
-                i_step = floor(radius/densProfileStep) + 1
-                density_profile(i_step) = density_profile(i_step) + 1/real(Nwalkers,8)
-            end do
-        end do 
+        !             NdensProfileSteps = size(density_profile)
+        !             MAX_RADIUS        = densProfileStep*new_size
+        !         end if 
+        !         i_step = floor(radius/densProfileStep) + 1
+        !         density_profile(i_step) = density_profile(i_step) + 1/real(Nwalkers,8)
+        !     end do
+        ! end do 
 
         
     end subroutine
