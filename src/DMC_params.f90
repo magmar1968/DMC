@@ -61,6 +61,7 @@ module DMC_parameters
     logical           :: PRINT_ENERGY_EVOLUTION      = .FALSE.
     logical           :: PRINT_INITIAL_PARAMETERS    = .FALSE.
     logical           :: PRINT_TRIAL_WAVEFUNCTION    = .FALSE.
+    logical           :: PRINT_FINAL_CONFIGURATION   = .FALSE.
     
     integer,parameter  :: MAX_FILENAME_LENGHT = 50
     character(MAX_FILENAME_LENGHT) :: outfile_path = "./data/"
@@ -70,6 +71,8 @@ module DMC_parameters
     character(MAX_FILENAME_LENGHT) :: energy_evolution_filename = "energy_evolution.dat"
     character(MAX_FILENAME_LENGHT) :: init_gas_conf_filename    = "init_gas_conf.dat"
     character(MAX_FILENAME_LENGHT) :: twf_filename              = "twf.dat"
+    character(MAX_FILENAME_LENGHT) :: final_conf_filename       = "final_conf.dat"
+    
     !}
     
 end module 
@@ -112,6 +115,7 @@ subroutine input(filename)
     call read_data("ENERGY_EVOLUTION"     ,PRINT_ENERGY_EVOLUTION     )
     call read_data("INITIAL_PARAMETERS"   ,PRINT_INITIAL_PARAMETERS   )
     call read_data("TRIAL_WF"             ,PRINT_TRIAL_WAVEFUNCTION   )
+    call read_data("FINAL_CONFIGURATION"   ,PRINT_FINAL_CONFIGURATION  )
     
     if (is_present("DENS_PROFILE_FILENAME")) then 
         call read_data("DENS_PROFILE_FILENAME", dens_profile_filename)
@@ -122,7 +126,9 @@ subroutine input(filename)
     if (is_present("TWF_FILENAME")) then 
         call read_data("TWF_FILENAME", twf_filename)
     end if
-    
+    if (is_present("FINAL_CONF_FILENAME")) then 
+        call read_data("FINAL_CONF_FILENAME", final_conf_filename)
+    end if
     if (PRINT_INITIAL_PARAMETERS) then 
         call print_parameters()
     endif    
@@ -154,6 +160,7 @@ subroutine print_parameters()
     print *, "   - ENERGY EVOLUTION      : ", PRINT_ENERGY_EVOLUTION
     print *, "   - INITIAL PARAMETERS    : ", PRINT_INITIAL_PARAMETERS 
     print *, "   - TRIAL WAVEFUNCTION    : ", PRINT_TRIAL_WAVEFUNCTION
+    print *, "   - FINAL CONFIGURATION   : ", PRINT_FINAL_CONFIGURATION
     print *, "######################################################"
 
 end subroutine

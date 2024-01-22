@@ -97,6 +97,46 @@ module DMC_print
         end do 
         close(FID)
     end subroutine
+
+
+    !####################################################
+    !#           Print Configuration to File            #
+    !####################################################
+    subroutine print_configuration_toFile(R,filename)
+        use DMC_parameters
+        implicit none
+        real*8,dimension(Natoms,DIM),intent(in) :: R 
+        character(*) :: filename
+        integer :: i_atom
+
+        open(FID,file=filename,status="replace")
+        write(FID,"(A)") "atom,x,y"
+        do i_atom=1, Natoms
+            write(FID,*) i_atom,",",R(i_atom,1),",",R(i_atom,2)
+        end do
+        close(FID)
+    end subroutine
+
+
+    ! subroutine print_inital_conf_toFile(R)
+    !     use DMC_parameters
+    !     implicit none 
+    !     real*8,intent(in),dimension(Natoms,DIM) :: R
+    !     character(MAX_FILENAME_LENGHT) :: filename 
+    !     filename = trim(outfile_path)//trim(init_conf_filename)
+    !     call print_configuration_toFile(R,filename)
+    ! end subroutine print_inital_conf_toFIle
+
+    subroutine print_final_conf_toFile(R)
+        use DMC_parameters
+        implicit none
+        real*8,intent(in),dimension(Natoms,DIM) :: R
+        character(MAX_FILENAME_LENGHT) :: filename
+        filename = trim(outfile_path)//trim(final_conf_filename)
+        call print_configuration_toFile(R,filename)
+    end subroutine
+    !####################################################
+
 end module 
 
     ! !##################################################
