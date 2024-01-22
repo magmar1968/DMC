@@ -97,7 +97,7 @@ module DMC
                         F1 = F(walker(:,:,i_walker,OLD)) !F(R)
                         R_TMP = R_DIFFUSED + D*dt*F1/2.       
                        
-                        !second step R'' = R + D*dt*(F(R) + F(R'))/4.
+                        !second step R'' = R_DIFFUSED + D*dt*(F(R) + F(R'))/4.
                         R_TMP = R_DIFFUSED + D*dt*(F1+F(R_TMP))/4.   
                        
                         !compute energy E(R'') 
@@ -127,6 +127,7 @@ module DMC
                         walker(:,:,new_Nwalkers,NEW) = R_TMP
                         EL(new_Nwalkers,NEW)         = EL_new
                     end do 
+
                 end do 
                 
                 NEW = 3 - NEW
@@ -135,6 +136,9 @@ module DMC
                 !adjust the energy to keep the pop +- constant
                 E_shift = E_acc/real(Nwalkers,8) &
                           - 0.1/dt * log( real(Nwalkers,8)/N0walkers)
+
+                if(PRINT_DENSITY_PROFILE .and. MC_step > 0) &
+                    density_profile = density_profile + tmp_density_profile/(Nwalkers)
             end do !end thermalization loop
             E = E_acc/real(Nwalkers,8)
             call stop_clock(Time)
@@ -149,11 +153,10 @@ module DMC
                 E2_avg = E2_avg * real(MC_step-1,kind=8)/real(MC_step,8) &
                          + (E**2)/real(MC_step,8)
                 if(PRINT_ENERGY_EVOLUTION) &
-                    call update_energy_accumulators()
-
-                if(PRINT_DENSITY_PROFILE) &
-                    density_profile = density_profile + tmp_density_profile/Nwalkers
+                    call update_energy_accumulators()       
                 
+                if(PRINT_DENSITY_PROFILE) &
+                    density_profile = density_profile/NThermSteps
             end if 
         end do 
 
@@ -164,6 +167,8 @@ module DMC
 
         if(PRINT_DENSITY_PROFILE) &
             call print_density_profile_toFile(density_profile)
+        if(PRINT_FINAL_CONFIGURATION) &
+            
 
         deallocate(walker)
         deallocate(density_profile)
@@ -252,26 +257,6 @@ module DMC
             i_step = floor(radius/densProfileStep) + 1
             density_profile(i_step) = density_profile(i_step) + son_number
         end do
-
-        
-        ! do i_walker = 1, Nwalkers
-        !     do i_atom = 1, Natoms
-        !         radius = norm2(walker(i_atom,:,i_walker,OLD)) 
-        !         if (radius > MAX_RADIUS) then 
-        !             Nenlarging = floor( (radius - MAX_RADIUS)/densProfileStep)
-        !             Nenlarging = Nenlarging + 2 !adding some extra space 
-        !             new_size   = size(density_profile) + Nenlarging
-                    
-        !             call increase_size(array=density_profile, new_size=new_size)
-                    
-        !             NdensProfileSteps = size(density_profile)
-        !             MAX_RADIUS        = densProfileStep*new_size
-        !         end if 
-        !         i_step = floor(radius/densProfileStep) + 1
-        !         density_profile(i_step) = density_profile(i_step) + 1/real(Nwalkers,8)
-        !     end do
-        ! end do 
-
         
     end subroutine
 
